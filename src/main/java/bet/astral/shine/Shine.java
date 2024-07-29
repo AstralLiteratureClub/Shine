@@ -1,14 +1,15 @@
 package bet.astral.shine;
 
-import bet.astral.platform.entity.reference.IEntityReference;
-import bet.astral.platform.entity.reference.IPlayerReference;
-import bet.astral.platform.world.IBlock;
-import bet.astral.platform.world.Position;
 import bet.astral.shine.annotations.GlowingEntities;
 import bet.astral.shine.annotations.LunarClient;
+import bet.astral.shine.receiver.BlockShineReceiver;
+import bet.astral.shine.receiver.EntityShineReceiver;
+import bet.astral.shine.receiver.ForwardingShineReceiver;
+import bet.astral.shine.receiver.ShineReceiver;
 import com.lunarclient.apollo.Apollo;
 import com.lunarclient.apollo.module.glow.GlowModule;
 import com.lunarclient.apollo.player.ApolloPlayer;
+
 import fr.skytasul.glowingentities.GlowingBlocks;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -19,7 +20,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Objects;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.UUID;
 
 /**
@@ -41,16 +43,18 @@ public final class Shine {
 		GlowModule glowModule1 = null;
 		try {
 			Class.forName("com.lunarclient.apollo.Apollo");
-			Apollo.getModuleManager().getModule(GlowModule.class);
+			glowModule1 = Apollo.getModuleManager().getModule(GlowModule.class);
+			glowModule1.enable();
 		} catch (ClassNotFoundException ignored) {
 		}
 		try {
 			Class.forName("fr.skytasul.glowingentities.GlowingEntities");
-			glowingEntities1 = new fr.skytasul.glowingentities.GlowingEntities(javaPlugin);
-			glowingEntities1.enable();
 			glowingBlocks1 = new GlowingBlocks(javaPlugin);
+			Method method = glowingBlocks1.getClass().getDeclaredMethod("entities");
+			glowingEntities1 = (fr.skytasul.glowingentities.GlowingEntities) method.invoke(glowingBlocks1);
 			glowingBlocks1.enable();
-		} catch (ClassNotFoundException ignored) {
+		} catch (ClassNotFoundException | InvocationTargetException | NoSuchMethodException |
+		         IllegalAccessException ignored) {
 		}
 		glowingBlocks = glowingBlocks1;
 		glowingEntities = glowingEntities1;
@@ -92,42 +96,53 @@ public final class Shine {
 
 	/**
 	 * Makes the given entity glow with given color to the player.
-	 * @param player player
+	 * @param receiver receiver
+	 * @param who who
+	 * @param color color
+	 * @throws ReflectiveOperationException If glowing entities has found a reflection exception
+	 */
+	@LunarClient(version = "> 1.7")
+	@GlowingEntities(version = "> 1.17")
+	public void setGlowing(@NotNull ShineReceiver receiver, @NotNull ShineReceiver who, @NotNull ShineColor color) throws ReflectiveOperationException {
+		if (receiver instanceof ForwardingShineReceiver forwardingShineReceiver){
+			for (ShineReceiver shineReceiver : forwardingShineReceiver){
+				setGlowing(shineReceiver, who, color);
+			}
+		} else if (receiver instanceof EntityShineReceiver entityShineReceiver && entityShineReceiver.getPlayer() != null){
+			setGlowing(entityShineReceiver.getPlayer(), who, color);
+		}
+	}
+
+	/**
+	 * Makes the given entity glow with given color to the player.
+	 * @param receiver receiver
 	 * @param entity entity to glow
 	 * @param color color
 	 * @throws ReflectiveOperationException If glowing entities has found a reflection exception
 	 */
 	@LunarClient(version = "> 1.7")
 	@GlowingEntities(version = "> 1.17")
-	public void setGlowing(@NotNull IPlayerReference<?, ?> player, @NotNull Entity entity, @NotNull ShineColor color) throws ReflectiveOperationException {
-		setGlowing(player, entity.getUniqueId(), color);
+	public void setGlowing(@NotNull ShineReceiver receiver, @NotNull Entity entity, @NotNull ShineColor color) throws ReflectiveOperationException {
+		setGlowing(receiver, entity.getUniqueId(), color);
 	}
 
 	/**
 	 * Makes the given entity glow with given color to the player.
-	 * @param player player
-	 * @param entity entity to glow
-	 * @param color color
-	 * @throws ReflectiveOperationException If glowing entities has found a reflection exception
-	 */
-	@LunarClient(version = "> 1.7")
-	@GlowingEntities(version = "> 1.17")
-	public void setGlowing(@NotNull IPlayerReference<?, ?> player, @NotNull IEntityReference<?> entity, @NotNull ShineColor color) throws ReflectiveOperationException {
-		setGlowing(player, entity.getUniqueId(), color);
-	}
-
-	/**
-	 * Makes the given entity glow with given color to the player.
-	 * @param player player
+	 * @param receiver player
 	 * @param entityId entity to glow
 	 * @param color color
 	 * @throws ReflectiveOperationException If glowing entities has found a reflection exception
 	 */
 	@LunarClient(version = "> 1.7")
 	@GlowingEntities(version = "> 1.17")
-	public void setGlowing(@NotNull IPlayerReference<?, ?> player, @NotNull UUID entityId, @NotNull ShineColor color) throws ReflectiveOperationException {
-		//noinspection DataFlowIssue
-		setGlowing((Player) player.getPlayerPlatform(), entityId, color);
+	public void setGlowing(@NotNull ShineReceiver receiver, @NotNull UUID entityId, @NotNull ShineColor color) throws ReflectiveOperationException {
+		if (receiver instanceof ForwardingShineReceiver forwardingShineReceiver){
+			for (ShineReceiver shineReceiver : forwardingShineReceiver){
+				setGlowing(shineReceiver, entityId, color);
+			}
+		} else if (receiver instanceof EntityShineReceiver entityShineReceiver && entityShineReceiver.getPlayer() != null){
+			setGlowing(entityShineReceiver.getPlayer(), entityId, color);
+		}
 	}
 	/**
 	 * Makes the given entity glow with given color to the player.
@@ -144,14 +159,22 @@ public final class Shine {
 	/**
 	 * Makes the given entity glow with given color to the player.
 	 * @param player player
-	 * @param entity entity to glow
+	 * @param who who to glow
 	 * @param color color
 	 * @throws ReflectiveOperationException If glowing entities has found a reflection exception
 	 */
 	@LunarClient(version = "> 1.7")
 	@GlowingEntities(version = "> 1.17")
-	public void setGlowing(@NotNull Player player, @NotNull IEntityReference<?> entity, @NotNull ShineColor color) throws ReflectiveOperationException {
-		setGlowing(player, entity.getUniqueId(), color);
+	public void setGlowing(@NotNull Player player, @NotNull ShineReceiver who, @NotNull ShineColor color) throws ReflectiveOperationException {
+		if (who instanceof ForwardingShineReceiver forwardingShineReceiver){
+			for (ShineReceiver shineReceiver : forwardingShineReceiver){
+				setGlowing(player, shineReceiver, color);
+			}
+		} else if (who instanceof EntityShineReceiver entityShineReceiver && entityShineReceiver.getEntity() != null){
+			setGlowing(player, entityShineReceiver.getEntity(), color);
+		} else if (who instanceof BlockShineReceiver blockShineReceiver && blockShineReceiver.getBlock() != null){
+			setGlowing(player, blockShineReceiver.getBlock(), color);
+		}
 	}
 	/**
 	 * Makes the given entity glow with given color to the player.
@@ -175,37 +198,48 @@ public final class Shine {
 
 	/**
 	 * Removes glowing from given entity from the given player
-	 * @param player player
+	 * @param receiver receiver
 	 * @param entity entity
 	 * @throws ReflectiveOperationException If glowing entities has found a reflection exception
 	 */
 	@LunarClient(version = "> 1.7")
 	@GlowingEntities(version = "> 1.17")
-	public void removeGlowing(@NotNull IPlayerReference<?, ?> player, @NotNull Entity entity) throws ReflectiveOperationException {
-		removeGlowing(player, entity.getUniqueId());
+	public void removeGlowing(@NotNull ShineReceiver receiver, @NotNull Entity entity) throws ReflectiveOperationException {
+		removeGlowing(receiver, entity.getUniqueId());
 	}
 	/**
 	 * Removes glowing from given entity from the given player
-	 * @param player player
-	 * @param entity entity
+	 * @param receiver receiver
+	 * @param who who to remove glowing off
 	 * @throws ReflectiveOperationException If glowing entities has found a reflection exception
 	 */
 	@LunarClient(version = "> 1.7")
 	@GlowingEntities(version = "> 1.17")
-	public void removeGlowing(@NotNull IPlayerReference<?, ?> player, @NotNull IEntityReference<?> entity) throws ReflectiveOperationException {
-		removeGlowing(player, entity.getUniqueId());
+	public void removeGlowing(@NotNull ShineReceiver receiver, @NotNull ShineReceiver who) throws ReflectiveOperationException {
+		if (receiver instanceof ForwardingShineReceiver forwardingShineReceiver){
+			for (ShineReceiver shineReceiver : forwardingShineReceiver){
+				removeGlowing(shineReceiver, who);
+			}
+		} else if (receiver instanceof EntityShineReceiver entityShineReceiver && entityShineReceiver.getPlayer()  != null){
+			removeGlowing(entityShineReceiver.getPlayer(), who);
+		}
 	}
 	/**
 	 * Removes glowing from given entity from the given player
-	 * @param player player
+	 * @param receiver receiver
 	 * @param entityId entity
 	 * @throws ReflectiveOperationException If glowing entities has found a reflection exception
 	 */
 	@LunarClient(version = "> 1.7")
 	@GlowingEntities(version = "> 1.17")
-	public void removeGlowing(@NotNull IPlayerReference<?, ?> player, @NotNull UUID entityId) throws ReflectiveOperationException {
-		removeGlowing((Player) Objects.requireNonNull(player.getPlayerPlatform()), entityId);
-	}
+	public void removeGlowing(@NotNull ShineReceiver receiver, @NotNull UUID entityId) throws ReflectiveOperationException {
+		if (receiver instanceof ForwardingShineReceiver forwardingShineReceiver){
+			for (ShineReceiver shineReceiver : forwardingShineReceiver){
+				removeGlowing(shineReceiver, entityId);
+			}
+		} else if (receiver instanceof EntityShineReceiver entityShineReceiver && entityShineReceiver.getPlayer()  != null){
+			removeGlowing(entityShineReceiver.getPlayer(), entityId);
+		}	}
 	/**
 	 * Removes glowing from given entity from the given player
 	 * @param player player
@@ -220,13 +254,24 @@ public final class Shine {
 	/**
 	 * Removes glowing from given entity from the given player
 	 * @param player player
-	 * @param entity entity
+	 * @param receiver receiver
 	 * @throws ReflectiveOperationException If glowing entities has found a reflection exception
 	 */
 	@LunarClient(version = "> 1.7")
 	@GlowingEntities(version = "> 1.17")
-	public void removeGlowing(@NotNull Player player, @NotNull IEntityReference<?> entity) throws ReflectiveOperationException {
-		removeGlowing(player, entity.getUniqueId());
+	public void removeGlowing(@NotNull Player player, @NotNull ShineReceiver receiver) throws ReflectiveOperationException {
+		if (receiver instanceof ForwardingShineReceiver forwardingShineReceiver){
+			for (ShineReceiver shineReceiver : forwardingShineReceiver.getReceivers()){
+				removeGlowing(player, shineReceiver);
+			}
+		} else if (receiver instanceof EntityShineReceiver entityShineReceiver){
+			removeGlowing(player, entityShineReceiver.getUniqueId());
+		} else if (receiver instanceof BlockShineReceiver blockShineReceiver){
+			if (blockShineReceiver.getBlock() == null){
+				return;
+			}
+			removeGlowing(player, blockShineReceiver.getBlock());
+		}
 	}
 	/**
 	 * Removes glowing from given entity from the given player
@@ -250,47 +295,34 @@ public final class Shine {
 
 	/**
 	 * Uses GlowingEntities to set given block to glow using a fake shulker box.
-	 * @param player player
+	 * @param receiver player
 	 * @param block block to glow
 	 * @param color color
 	 * @throws ReflectiveOperationException If glowing blocks has found a reflection exception
 	 */
 	@GlowingEntities(version = "> 1.17")
-	public void setGlowing(@NotNull IPlayerReference<?, ?> player, @NotNull Block block, @NotNull ShineColor color) throws ReflectiveOperationException {
-		setGlowing((Player) player.getPlayerPlatform(), block, color);
+	public void setGlowing(@NotNull ShineReceiver receiver, @NotNull Block block, @NotNull ShineColor color) throws ReflectiveOperationException {
+		if (receiver instanceof ForwardingShineReceiver forwardingShineReceiver){
+			for (ShineReceiver shineReceiver : forwardingShineReceiver){
+				setGlowing(shineReceiver, block, color);
+			}
+		} else if (receiver instanceof EntityShineReceiver shineReceiver){
+			if (shineReceiver.getPlayer() == null){
+				return;
+			}
+			setGlowing(shineReceiver.getPlayer(), block, color);
+		}
 	}
 	/**
 	 * Uses GlowingEntities to set given block to glow using a fake shulker box.
-	 * @param player player
+	 * @param receiver player
 	 * @param location location of block to glow
 	 * @param color color
 	 * @throws ReflectiveOperationException If glowing blocks has found a reflection exception
 	 */
 	@GlowingEntities(version = "> 1.17")
-	public void setGlowing(@NotNull IPlayerReference<?, ?> player, @NotNull Location location, @NotNull ShineColor color) throws ReflectiveOperationException {
-		setGlowing(player, location.getBlock(), color);
-	}
-	/**
-	 * Uses GlowingEntities to set given block to glow using a fake shulker box.
-	 * @param player player
-	 * @param block block to glow
-	 * @param color color
-	 * @throws ReflectiveOperationException If glowing blocks has found a reflection exception
-	 */
-	@GlowingEntities(version = "> 1.17")
-	public void setGlowing(@NotNull IPlayerReference<?, ?> player, @NotNull IBlock<?> block, @NotNull ShineColor color) throws ReflectiveOperationException {
-		setGlowing(player, (Block) block.getHandle(), color);
-	}
-	/**
-	 * Uses GlowingEntities to set given block to glow using a fake shulker box.
-	 * @param player player
-	 * @param location location of block to glow
-	 * @param color color
-	 * @throws ReflectiveOperationException If glowing blocks has found a reflection exception
-	 */
-	@GlowingEntities(version = "> 1.17")
-	public void setGlowing(@NotNull IPlayerReference<?, ?> player, @NotNull Position location, @NotNull ShineColor color) throws ReflectiveOperationException {
-		setGlowing(player, new Location(Bukkit.getWorld(location.getWorld()), location.getX(), location.getY(), location.getZ(), location.getYaw(), location.getPitch()), color);
+	public void setGlowing(@NotNull ShineReceiver receiver, @NotNull Location location, @NotNull ShineColor color) throws ReflectiveOperationException {
+		setGlowing(receiver, location.getBlock(), color);
 	}
 	/**
 	 * Uses GlowingEntities to set given block to glow using a fake shulker box.
@@ -320,67 +352,34 @@ public final class Shine {
 		setGlowing(player, location.getBlock(), color);
 	}
 	/**
-	 * Uses GlowingEntities to set given block to glow using a fake shulker box.
-	 * @param player player
-	 * @param block block to glow
-	 * @param color color
-	 * @throws ReflectiveOperationException If glowing blocks has found a reflection exception
-	 */
-	@GlowingEntities(version = "> 1.17")
-	public void setGlowing(@NotNull Player player, @NotNull IBlock<?> block, @NotNull ShineColor color) throws ReflectiveOperationException {
-		setGlowing(player, (Block) block.getHandle(), color);
-	}
-	/**
-	 * Uses GlowingEntities to set given block to glow using a fake shulker box.
-	 * @param player player
-	 * @param location location of block to glow
-	 * @param color color
-	 * @throws ReflectiveOperationException If glowing blocks has found a reflection exception
-	 */
-	@GlowingEntities(version = "> 1.17")
-	public void setGlowing(@NotNull Player player, @NotNull Position location, @NotNull ShineColor color) throws ReflectiveOperationException {
-		setGlowing(player, new Location(Bukkit.getWorld(location.getWorld()), location.getX(), location.getY(), location.getZ(), location.getYaw(), location.getPitch()), color);
-	}
-	/**
 	 * Removes the fake shulker and glowing from given block from given player.
-	 * @param player player
+	 * @param receiver player
 	 * @param block block to remove glowing from
 	 * @throws ReflectiveOperationException If glowing blocks has found a reflection exception
 	 */
 	@GlowingEntities(version = "> 1.17")
-	public void removeGlowing(@NotNull IPlayerReference<?, ?> player, @NotNull Block block) throws ReflectiveOperationException {
-		removeGlowing((Player) player.getPlayerPlatform(), block);
+	public void removeGlowing(@NotNull ShineReceiver receiver, @NotNull Block block) throws ReflectiveOperationException {
+		removeGlowing(receiver, block.getLocation());
 	}
 
 	/**
 	 * Removes the fake shulker and glowing from given block from given player.
-	 * @param player player
+	 * @param receiver player
 	 * @param location location of block to remove glowing from
 	 * @throws ReflectiveOperationException If glowing blocks has found a reflection exception
 	 */
 	@GlowingEntities(version = "> 1.17")
-	public void removeGlowing(@NotNull IPlayerReference<?, ?> player, @NotNull Location location) throws ReflectiveOperationException {
-		removeGlowing(player, location.getBlock());
-	}
-	/**
-	 * Removes the fake shulker and glowing from given block from given player.
-	 * @param player player
-	 * @param block block to remove glowing from
-	 * @throws ReflectiveOperationException If glowing blocks has found a reflection exception
-	 */
-	@GlowingEntities(version = "> 1.17")
-	public void removeGlowing(@NotNull IPlayerReference<?, ?> player, @NotNull IBlock<?> block) throws ReflectiveOperationException {
-		removeGlowing(player, (Block) block.getHandle());
-	}
-	/**
-	 * Removes the fake shulker and glowing from given block from given player.
-	 * @param player player
-	 * @param location location of block to remove glowing from
-	 * @throws ReflectiveOperationException If glowing blocks has found a reflection exception
-	 */
-	@GlowingEntities(version = "> 1.17")
-	public void removeGlowing(@NotNull IPlayerReference<?, ?> player, @NotNull Position location) throws ReflectiveOperationException {
-		removeGlowing(player, new Location(Bukkit.getWorld(location.getWorld()), location.getX(), location.getY(), location.getZ(), location.getYaw(), location.getPitch()));
+	public void removeGlowing(@NotNull ShineReceiver receiver, @NotNull Location location) throws ReflectiveOperationException {
+		if (receiver instanceof ForwardingShineReceiver forwardingShineReceiver){
+			for (ShineReceiver shineReceiver : forwardingShineReceiver){
+				removeGlowing(shineReceiver, location);
+			}
+		} else if (receiver instanceof EntityShineReceiver shineReceiver){
+			if (shineReceiver.getPlayer() == null){
+				return;
+			}
+			removeGlowing(shineReceiver.getPlayer(), location);
+		}
 	}
 	/**
 	 * Removes the fake shulker and glowing from given block from given player.
@@ -400,31 +399,11 @@ public final class Shine {
 	/**
 	 * Removes the fake shulker and glowing from given block from given player.
 	 * @param player player
-	 * @param block block to remove glowing from
-	 * @throws ReflectiveOperationException If glowing blocks has found a reflection exception
-	 */
-	@GlowingEntities(version = "> 1.17")
-	public void removeGlowing(@NotNull Player player, @NotNull IBlock<?> block) throws ReflectiveOperationException {
-		removeGlowing(player, (Block) block.getHandle());
-	}
-	/**
-	 * Removes the fake shulker and glowing from given block from given player.
-	 * @param player player
 	 * @param location location of block to remove glowing from
 	 * @throws ReflectiveOperationException If glowing blocks has found a reflection exception
 	 */
 	@GlowingEntities(version = "> 1.17")
 	public void removeGlowing(@NotNull Player player, @NotNull Location location) throws ReflectiveOperationException {
 		removeGlowing(player, location.getBlock());
-	}
-	/**
-	 * Removes the fake shulker and glowing from given block from given player.
-	 * @param player player
-	 * @param location location of block to remove glowing from
-	 * @throws ReflectiveOperationException If glowing blocks has found a reflection exception
-	 */
-	@GlowingEntities(version = "> 1.17")
-	public void removeGlowing(@NotNull Player player, @NotNull Position location) throws ReflectiveOperationException {
-		removeGlowing(player, new Location(Bukkit.getWorld(location.getWorld()), location.getX(), location.getY(), location.getZ(), location.getYaw(), location.getPitch()));
 	}
 }
